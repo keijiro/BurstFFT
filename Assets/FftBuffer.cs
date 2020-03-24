@@ -1,6 +1,7 @@
 using System.Linq;
-using Unity.Mathematics;
 using Unity.Collections;
+using Unity.Mathematics;
+using Unity.Jobs;
 
 public sealed class FftBuffer : System.IDisposable
 {
@@ -23,34 +24,23 @@ public sealed class FftBuffer : System.IDisposable
     {
         var A = TempJobMemory.New<float4>(_N / 2);
 
-        for (var i = 0; i < _N / 2; i++)
-        {
-            var a1 = input[_rev[i].x];
-            var a2 = input[_rev[i].y];
-            A[i] = math.float4(a1 + a2, 0, a1 - a2, 0);
-        }
-
-        var op_i = 0;
+        var job1 = new FirstPassJob { I = input, Rev = _rev, A = A };
+        var handle = job1.Schedule(_N / 2, 16);
 
         for (var i = 0; i < _logN - 1; i++)
-            for (var j = 0; j < _N / 4; j++)
-            {
-                var o = _op[op_i++];
-
-                var t = Mulc(o.W4, A[o.I.y]);
-                var u = A[o.I.x];
-
-                A[o.I.x] = u + t;
-                A[o.I.y] = u - t;
-            }
+        {
+            var slice = new NativeSlice<Operator>(_op, _N / 4 * i);
+            var job2 = new FftCoreJob { A = A, Op = slice };
+            handle = job2.Schedule(_N / 4, 16, handle);
+        }
 
         var output = new NativeArray<float>(_N, Allocator.Persistent,
                                             NativeArrayOptions.UninitializedMemory);
-        for (var i = 0; i < _N / 2; i++)
-        {
-            output[i * 2    ] = math.length(A[i].xy) * 2 / _N;
-            output[i * 2 + 1] = math.length(A[i].zw) * 2 / _N;
-        }
+
+        var job3 = new PostprocessJob { A = A, O = output.Reinterpret<float2>(sizeof(float)) };
+        handle = job3.Schedule(_N / 2, 16, handle);
+
+        handle.Complete();
 
         A.Dispose();
 
@@ -59,6 +49,62 @@ public sealed class FftBuffer : System.IDisposable
 
     static float4 Mulc(float4 a, float4 b)
       => a.xxzz * b.xyzw + math.float4(-1, 1, -1, 1) * a.yyww * b.yxwz;
+
+    #region First pass job
+
+    [Unity.Burst.BurstCompile(CompileSynchronously = true)]
+    struct FirstPassJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<float> I;
+        [ReadOnly] public NativeArray<int2> Rev;
+        [WriteOnly] public NativeArray<float4> A;
+
+        public void Execute(int i)
+        {
+            var a1 = I[Rev[i].x];
+            var a2 = I[Rev[i].y];
+            A[i] = math.float4(a1 + a2, 0, a1 - a2, 0);
+        }
+    }
+
+    #endregion
+
+    #region FFT core job
+
+    [Unity.Burst.BurstCompile(CompileSynchronously = true)]
+    struct FftCoreJob : IJobParallelFor
+    {
+        [NativeDisableParallelForRestriction] public NativeArray<float4> A;
+        [ReadOnly] public NativeSlice<Operator> Op;
+
+        public void Execute(int i)
+        {
+            var o = Op[i];
+            var t = Mulc(o.W4, A[o.i2]);
+            var u = A[o.i1];
+            A[o.i1] = u + t;
+            A[o.i2] = u - t;
+        }
+    }
+
+    #endregion
+
+    #region Postprocess Job
+
+    [Unity.Burst.BurstCompile(CompileSynchronously = true)]
+    struct PostprocessJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<float4> A;
+        [WriteOnly] public NativeArray<float2> O;
+
+        public void Execute(int i)
+        {
+            var a = A[i];
+            O[i] = math.float2(math.length(a.xy), math.length(a.zw)) / O.Length;
+        }
+    }
+
+    #endregion
 
     #region Transform configuration
 
@@ -93,6 +139,9 @@ public sealed class FftBuffer : System.IDisposable
     {
         public int2 I;
         public float2 W;
+
+        public int i1 => I.x;
+        public int i2 => I.y;
 
         public float4 W4
           => math.float4(W.x, math.sqrt(1 - W.x * W.x),
