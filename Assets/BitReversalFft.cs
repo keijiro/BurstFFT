@@ -10,7 +10,7 @@ public static class BitReversalFft
     static public NativeArray<float> Transform(IEnumerable<float> input)
     {
         var buffer = Preprocess(input);
-        Fft(buffer);
+        Fft(buffer, Precalc(buffer.Length));
         return new NativeArray<float>(Postprocess(buffer), Allocator.Persistent);
     }
 
@@ -20,6 +20,36 @@ public static class BitReversalFft
         for (var i = 0; i < logN; i++)
             if (((1u << i) & index) != 0) acc += 1u << (logN - 1 - i);
         return acc;
+    }
+
+    struct FftOperator
+    {
+        public float2 W;
+        public int2 I;
+
+        public float4 W4
+          => math.float4(W.x, math.sqrt(1 - W.x * W.x), W.y, math.sqrt(1 - W.y * W.y));
+    }
+
+    static FftOperator[] Precalc(int N)
+    {
+        var Op = new List<FftOperator>();
+
+        for (var m = 4; m <= N; m <<= 1)
+        {
+            for (var k = 0; k < N; k += m)
+            {
+                for (var j = 0; j < m / 2; j += 2)
+                {
+                    Op.Add(new FftOperator {
+                        W = math.cos(-2 * math.PI / m * math.float2(j, j + 1)),
+                        I = math.int2((k + j) / 2, (k + j + m / 2) / 2)
+                    });
+                }
+            }
+        }
+
+        return Op.ToArray();
     }
 
     static float2[] Preprocess(IEnumerable<float> input)
@@ -44,7 +74,7 @@ public static class BitReversalFft
     static float4 Mulc(float4 a, float4 b)
       => a.xxzz * b.xyzw + math.float4(-1, 1, -1, 1) * a.yyww * b.yxwz;
       
-    static void Fft(float2[] A)
+    static void Fft(float2[] A, FftOperator[] op)
     {
         var A4 = MemoryMarshal.Cast<float2, float4>(new Span<float2>(A));
         var N = A.Length;
@@ -54,22 +84,19 @@ public static class BitReversalFft
         for (var i = 0; i < N / 2; i++)
             A4[i] = A4[i].xyxy + Cppnn * A4[i].zwzw;
 
+        var op_i = 0;
+
         for (var m = 4; m <= N; m <<= 1)
         {
-            for (var k = 0; k < N; k += m)
+            for (var k = 0; k < N / 4; k ++)
             {
-                for (var j = 0; j < m / 2; j += 2)
-                {
-                    var i1 = (k + j) / 2;
-                    var i2 = (k + j + m / 2) / 2;
+                var o = op[op_i++];
 
-                    var w = Expi(-2 * math.PI / m * math.float2(j, j + 1));
-                    var t = Mulc(w, A4[i2]);
-                    var u = A4[i1];
+                var t = Mulc(o.W4, A4[o.I.y]);
+                var u = A4[o.I.x];
 
-                    A4[i1] = u + t;
-                    A4[i2] = u - t;
-                }
+                A4[o.I.x] = u + t;
+                A4[o.I.y] = u - t;
             }
         }
     }
