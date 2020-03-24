@@ -21,7 +21,7 @@ sealed class Test : MonoBehaviour
             _dftTexture.LoadRawTextureData(spectrum);
         _dftTexture.Apply();
 
-        using (var spectrum = BitReversalFft.Transform(source))
+        using (var spectrum = (new FftBuffer(1024)).Transform(source.ToArray()))
             _fftTexture.LoadRawTextureData(spectrum);
         _fftTexture.Apply();
     }

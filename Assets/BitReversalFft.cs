@@ -14,13 +14,9 @@ public static class BitReversalFft
         return new NativeArray<float>(Postprocess(buffer), Allocator.Persistent);
     }
 
-    static uint BitReverseIndex(uint index, int logN)
-    {
-        var acc = 0u;
-        for (var i = 0; i < logN; i++)
-            if (((1u << i) & index) != 0) acc += 1u << (logN - 1 - i);
-        return acc;
-    }
+    static uint BitReverseIndex(uint x, int logN)
+      => Enumerable.Range(0, logN)
+        .Aggregate(0u, (acc, i) => acc += ((x >> i) & 1u) << (logN - 1 - i));
 
     struct FftOperator
     {
@@ -58,7 +54,7 @@ public static class BitReversalFft
         var output = new float2[source.Length];
         var logN = (int)math.log2(source.Length);
         for (var i = 0u; i < source.Length; i++)
-            output[BitReverseIndex(i, logN)] = math.float2(source[i], 0);
+            output[i] = math.float2(source[BitReverseIndex(i, logN)], 0);
         return output;
     }
 
