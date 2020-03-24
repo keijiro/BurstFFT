@@ -9,10 +9,9 @@ public static class BitReversalFft
 {
     static public NativeArray<float> Transform(IEnumerable<float> input)
     {
-        var (A_r, A_i) = Prepare(input);
-        Fft(A_r, A_i);
-        Postprocess(A_r, A_i);
-        return new NativeArray<float>(A_r, Allocator.Persistent);
+        var buffer = Preprocess(input);
+        Fft(buffer);
+        return new NativeArray<float>(Postprocess(buffer), Allocator.Persistent);
     }
 
     static uint BitReverseIndex(uint index, int logN)
@@ -23,84 +22,58 @@ public static class BitReversalFft
         return acc;
     }
 
-    static (float[], float[]) Prepare(IEnumerable<float> input)
+    static float2[] Preprocess(IEnumerable<float> input)
     {
         var source = input.ToArray();
-        var output = new float[source.Length];
+        var output = new float2[source.Length];
         var logN = (int)math.log2(source.Length);
         for (var i = 0u; i < source.Length; i++)
-            output[BitReverseIndex(i, logN)] = source[i];
-        return (output, new float[source.Length]);
+            output[BitReverseIndex(i, logN)] = math.float2(source[i], 0);
+        return output;
     }
 
-    static float MulExpi_r(float r, float i, float t)
-      => r * math.cos(t) - i * math.sin(t);
+    static float2 Expi(float t)
+      => math.float2(math.cos(t), math.sin(t));
 
-    static float MulExpi_i(float r, float i, float t)
-      => r * math.sin(t) + i * math.cos(t);
+    static float4 Expi(float2 t)
+      => math.float4(math.cos(t.x), math.sin(t.x), math.cos(t.y), math.sin(t.y));
 
-    static float4 MulExpi_r(float4 r, float4 i, float4 t)
-      => r * math.cos(t) - i * math.sin(t);
+    static float2 Mulc(float2 a, float2 b)
+      => math.float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
 
-    static float4 MulExpi_i(float4 r, float4 i, float4 t)
-      => r * math.sin(t) + i * math.cos(t);
-
-    static void Fft(float[] A_r, float[] A_i)
+    static float4 Mulc(float4 a, float4 b)
+      => a.xxzz * b.xyzw + math.float4(-1, 1, -1, 1) * a.yyww * b.yxwz;
+      
+    static void Fft(float2[] A)
     {
-        var N = A_r.Length;
+        var A4 = MemoryMarshal.Cast<float2, float4>(new Span<float2>(A));
+        var N = A.Length;
 
-        for (var m = 2; m <= N; m <<= 1)
+        var Cppnn = math.float4(1, 1, -1, -1);
+
+        for (var i = 0; i < N / 2; i++)
+            A4[i] = A4[i].xyxy + Cppnn * A4[i].zwzw;
+
+        for (var m = 4; m <= N; m <<= 1)
         {
             for (var k = 0; k < N; k += m)
             {
-                if (m / 2 < 4)
-                    for (var j = 0; j < m / 2; j++)
-                    {
-                        var i1 = k + j;
-                        var i2 = k + j + m / 2;
-
-                        var x = -2 * math.PI * j / m;
-
-                        var t_r = MulExpi_r(A_r[i2], A_i[i2], x);
-                        var t_i = MulExpi_i(A_r[i2], A_i[i2], x);
-                        var (u_r, u_i) = (A_r[i1], A_i[i1]);
-
-                        (A_r[i1], A_i[i1]) = (u_r + t_r, u_i + t_i);
-                        (A_r[i2], A_i[i2]) = (u_r - t_r, u_i - t_i);
-                    }
-                else
+                for (var j = 0; j < m / 2; j += 2)
                 {
-                    var A4_r = MemoryMarshal.Cast<float, float4>(new Span<float>(A_r));
-                    var A4_i = MemoryMarshal.Cast<float, float4>(new Span<float>(A_i));
+                    var i1 = (k + j) / 2;
+                    var i2 = (k + j + m / 2) / 2;
 
-                    for (var j = 0; j < m / 2; j += 4)
-                    {
-                        var i1 = (k + j) / 4;
-                        var i2 = (k + j + m / 2) / 4;
+                    var w = Expi(-2 * math.PI / m * math.float2(j, j + 1));
+                    var t = Mulc(w, A4[i2]);
+                    var u = A4[i1];
 
-                        var x = math.float4(
-                          -2 * math.PI *  j      / m,
-                          -2 * math.PI * (j + 1) / m,
-                          -2 * math.PI * (j + 2) / m,
-                          -2 * math.PI * (j + 3) / m
-                        );
-
-                        var t_r = MulExpi_r(A4_r[i2], A4_i[i2], x);
-                        var t_i = MulExpi_i(A4_r[i2], A4_i[i2], x);
-                        var (u_r, u_i) = (A4_r[i1], A4_i[i1]);
-
-                        (A4_r[i1], A4_i[i1]) = (u_r + t_r, u_i + t_i);
-                        (A4_r[i2], A4_i[i2]) = (u_r - t_r, u_i - t_i);
-                    }
+                    A4[i1] = u + t;
+                    A4[i2] = u - t;
                 }
             }
         }
     }
 
-    static void Postprocess(float[] A_r, float[] A_i)
-    {
-        var len = A_r.Length;
-        for (var i = 0; i < len; i++)
-            A_r[i] = math.sqrt(A_r[i] * A_r[i] + A_i[i] * A_i[i]) * 2 / len;
-    }
+    static float[] Postprocess(float2[] input)
+      => input.Select(c => math.length(c) * 2 / input.Length).ToArray();
 }
