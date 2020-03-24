@@ -16,24 +16,21 @@ public static class BitReversalFft
     static void Fft(float2[] A)
     {
         var N = A.Length;
-        var logN = (int)math.log2(N);
 
-        for (var s = 0; s < logN; s++)
+        for (var m = 2; m <= N; m <<= 1)
         {
-            var m = 2 << s;
-            var w_m = Expi(-2 * math.PI / m);
-
             for (var k = 0; k < N; k += m)
             {
-                var w = math.float2(1, 0);
-
                 for (var j = 0; j < m / 2; j++)
                 {
-                    var t = Mulc(w, A[k + j + m / 2]);
-                    var u = A[k + j];
-                    A[k + j] = u + t;
-                    A[k + j + m / 2] = u - t;
-                    w = Mulc(w, w_m);
+                    var i1 = k + j;
+                    var i2 = k + j + m / 2;
+
+                    var t = Mulc(Expi(-2 * math.PI * j / m), A[i2]);
+                    var u = A[i1];
+
+                    A[i1] = u + t;
+                    A[i2] = u - t;
                 }
             }
         }
