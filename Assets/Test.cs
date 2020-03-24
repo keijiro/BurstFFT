@@ -1,5 +1,6 @@
 using System.Linq;
 using UnityEngine;
+using Unity.Collections;
 using Unity.Mathematics;
 
 sealed class Test : MonoBehaviour
@@ -17,13 +18,17 @@ sealed class Test : MonoBehaviour
         _dftTexture = new Texture2D(512, 1, TextureFormat.RFloat, false);
         _fftTexture = new Texture2D(512, 1, TextureFormat.RFloat, false);
 
-        using (var spectrum = Dft.Transform(source))
-            _dftTexture.LoadRawTextureData(spectrum);
-        _dftTexture.Apply();
+        using (var source_na = new NativeArray<float>(source.ToArray(), Allocator.Persistent))
+        {
+            using (var spectrum = Dft.Transform(source))
+                _dftTexture.LoadRawTextureData(spectrum);
+            _dftTexture.Apply();
 
-        using (var spectrum = (new FftBuffer(1024)).Transform(source.ToArray()))
-            _fftTexture.LoadRawTextureData(spectrum);
-        _fftTexture.Apply();
+            using (var fft = new FftBuffer(1024))
+                using (var spectrum = fft.Transform(source_na))
+                    _fftTexture.LoadRawTextureData(spectrum);
+            _fftTexture.Apply();
+        }
     }
 
     void OnGUI()

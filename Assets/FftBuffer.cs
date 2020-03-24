@@ -2,32 +2,33 @@ using System.Linq;
 using Unity.Mathematics;
 using Unity.Collections;
 
-public sealed class FftBuffer
+public sealed class FftBuffer : System.IDisposable
 {
     public FftBuffer(int width)
     {
         _N = width;
         _logN = (int)math.log2(_N);
 
-        _rev = Enumerable.Range(0, _N)
-          .Select(i => BitReverseIndex(i)).ToArray();
-
-        BuildOperatorTable();
+        BuildBitReverseTable();
+        BuildOperators();
     }
 
-    public NativeArray<float> Transform(float[] input)
+    public void Dispose()
     {
-        var A = new float4[_N / 2];
+        if (_rev.IsCreated) _rev.Dispose();
+        if (_op.IsCreated) _op.Dispose();
+    }
 
-        for (var i = 0; i < _N; i += 2)
-            A[i / 2] =
-              math.float4(input[_rev[i    ]], 0,
-                          input[_rev[i + 1]], 0);
-
-        var Cppnn = math.float4(1, 1, -1, -1);
+    public NativeArray<float> Transform(NativeArray<float> input)
+    {
+        var A = TempJobMemory.New<float4>(_N / 2);
 
         for (var i = 0; i < _N / 2; i++)
-            A[i] = A[i].xyxy + Cppnn * A[i].zwzw;
+        {
+            var a1 = input[_rev[i].x];
+            var a2 = input[_rev[i].y];
+            A[i] = math.float4(a1 + a2, 0, a1 - a2, 0);
+        }
 
         var op_i = 0;
 
@@ -51,13 +52,42 @@ public sealed class FftBuffer
             output[i * 2 + 1] = math.length(A[i].zw) * 2 / _N;
         }
 
+        A.Dispose();
+
         return output;
     }
 
-    int _N;
-    int _logN;
-    int[] _rev;
-    Operator[] _op;
+    static float4 Mulc(float4 a, float4 b)
+      => a.xxzz * b.xyzw + math.float4(-1, 1, -1, 1) * a.yyww * b.yxwz;
+
+    #region Transform configuration
+
+    readonly int _N;
+    readonly int _logN;
+
+    #endregion
+
+    #region Bit reverse table
+
+    NativeArray<int2> _rev;
+
+    void BuildBitReverseTable()
+    {
+        _rev = new NativeArray<int2>
+          ( _N / 2, Allocator.Persistent,
+            NativeArrayOptions.UninitializedMemory );
+
+        for (var i = 0; i < _N; i += 2)
+            _rev[i / 2] = math.int2(BitReverseIndex(i), BitReverseIndex(i + 1));
+    }
+
+    int BitReverseIndex(int x)
+      => Enumerable.Range(0, _logN)
+         .Aggregate(0, (acc, i) => acc += ((x >> i) & 1) << (_logN - 1 - i));
+
+    #endregion
+
+    #region FFT Operators
 
     struct Operator
     {
@@ -69,25 +99,22 @@ public sealed class FftBuffer
                          W.y, math.sqrt(1 - W.y * W.y));
     }
 
-    int BitReverseIndex(int x)
-      => Enumerable.Range(0, _logN)
-        .Aggregate(0, (acc, i) => acc += ((x >> i) & 1) << (_logN - 1 - i));
+    NativeArray<Operator> _op;
 
-    void BuildOperatorTable()
+    void BuildOperators()
     {
-        _op = new Operator[(_logN - 1) * (_N / 4)];
+        _op = new NativeArray<Operator>
+          ( (_logN - 1) * (_N / 4), Allocator.Persistent,
+            NativeArrayOptions.UninitializedMemory );
 
         var i = 0;
-
         for (var m = 4; m <= _N; m <<= 1)
             for (var k = 0; k < _N; k += m)
                 for (var j = 0; j < m / 2; j += 2)
-                    _op[i++] = new Operator {
-                      W = math.cos(-2 * math.PI / m * math.float2(j, j + 1)),
-                      I = math.int2((k + j) / 2, (k + j + m / 2) / 2)
-                    };
+                    _op[i++] = new Operator
+                      { I = math.int2((k + j) / 2, (k + j + m / 2) / 2),
+                        W = math.cos(-2 * math.PI / m * math.float2(j, j + 1)) };
     }
 
-    static float4 Mulc(float4 a, float4 b)
-      => a.xxzz * b.xyzw + math.float4(-1, 1, -1, 1) * a.yyww * b.yxwz;
+    #endregion
 }
