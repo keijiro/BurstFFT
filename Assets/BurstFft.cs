@@ -1,3 +1,5 @@
+#define SINGLE_THREAD
+
 using System.Linq;
 using Unity.Collections;
 using Unity.Mathematics;
@@ -29,31 +31,57 @@ public sealed class BurstFft : IDft, System.IDisposable
         if (_O.IsCreated) _O.Dispose();
     }
 
+    #if SINGLE_THREAD
+
     public void Transform(NativeArray<float> input)
     {
-        // Buffer allocation
         var X = TempJobMemory.New<float4>(_N / 2);
 
         // Bit-reversal permutation and first DFT pass
-        var handle = new FirstPassJob
-          { I = input, P = _P, X = X }
-          .Schedule(_N / 2, 512);
+        new FirstPassJob { I = input, P = _P, X = X }.Run(_N / 2);
 
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
-            handle = new DftPassJob
-              { T = new NativeSlice<TFactor>(_T, _N / 4 * i), X = X }
-              .Schedule(_N / 4, 256, handle);
+        {
+            var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
+            new DftPassJob { T = T_slice, X = X }.Run(_N / 4);
+        }
 
         // Postprocess (power spectrum calculation)
-        handle = new PostprocessJob
-          { X = X, O = _O.Reinterpret<float2>(sizeof(float)), s = 2.0f / _N }
-          .Schedule(_N / 2, 512, handle);
+        var O2 = _O.Reinterpret<float2>(sizeof(float));
+        new PostprocessJob { X = X, O = O2, s = 2.0f / _N }.Run(_N / 2);
 
-        // Job completion
+        X.Dispose();
+    }
+
+    #else
+
+    public void Transform(NativeArray<float> input)
+    {
+        var X = TempJobMemory.New<float4>(_N / 2);
+
+        // Bit-reversal permutation and first DFT pass
+        var handle = new FirstPassJob { I = input, P = _P, X = X }
+          .Schedule(_N / 2, 32);
+
+        // 2nd and later DFT passes
+        for (var i = 0; i < _logN - 1; i++)
+        {
+            var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
+            handle = new DftPassJob { T = T_slice, X = X }
+              .Schedule(_N / 4, 32, handle);
+        }
+
+        // Postprocess (power spectrum calculation)
+        var O2 = _O.Reinterpret<float2>(sizeof(float));
+        handle = new PostprocessJob { X = X, O = O2, s = 2.0f / _N }
+          .Schedule(_N / 2, 32, handle);
+
         handle.Complete();
         X.Dispose();
     }
+
+    #endif
 
     #endregion
 
