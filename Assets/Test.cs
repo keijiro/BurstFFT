@@ -28,7 +28,7 @@ sealed class Test : MonoBehaviour
         var sw = new System.Diagnostics.Stopwatch();
 
         // Benchmark
-        const int iteration = 100;
+        const int iteration = 32;
         sw.Start();
         for (var i = 0; i < iteration; i++) dft.Transform(input);
         sw.Stop();
@@ -43,23 +43,26 @@ sealed class Test : MonoBehaviour
         return texture;
     }
 
-    Texture2D _dft;
+    Texture2D _dft1;
+    Texture2D _dft2;
     Texture2D _fft;
 
     void Start()
     {
         using (var data = TempJobMemory.New<float>(TestData))
         {
-            using (var dft = new BurstDft(Width)) _dft = Benchmark(dft, data);
-            using (var fft = new BurstFft(Width)) _fft = Benchmark(fft, data);
+            using (var ft = new NaiveDft(Width)) _dft1 = Benchmark(ft, data);
+            using (var ft = new BurstDft(Width)) _dft2 = Benchmark(ft, data);
+            using (var ft = new BurstFft(Width)) _fft  = Benchmark(ft, data);
         }
     }
 
     void OnGUI()
     {
         if (!Event.current.type.Equals(EventType.Repaint)) return;
-        Graphics.DrawTexture(new Rect(10, 10, Width / 2, 16), _dft);
-        Graphics.DrawTexture(new Rect(10, 38, Width / 2, 16), _fft);
+        Graphics.DrawTexture(new Rect(10, 10, Width / 2, 16), _dft1);
+        Graphics.DrawTexture(new Rect(10, 38, Width / 2, 16), _dft2);
+        Graphics.DrawTexture(new Rect(10, 64, Width / 2, 16), _fft);
     }
 }
 
