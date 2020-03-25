@@ -25,8 +25,10 @@ sealed class Test : MonoBehaviour
             _dftTexture.Apply();
 
             using (var fft = new FftBuffer(1024))
-                using (var spectrum = fft.Transform(source_na))
-                    _fftTexture.LoadRawTextureData(spectrum);
+            {
+                fft.Transform(source_na);
+                _fftTexture.LoadRawTextureData(fft.Spectrum);
+            }
             _fftTexture.Apply();
         }
     }

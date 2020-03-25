@@ -11,3 +11,13 @@ public static class TempJobMemory
       => new NativeArray<T>(size, Allocator.TempJob,
                             NativeArrayOptions.UninitializedMemory);
 }
+
+public static class PersistentMemory
+{
+    public static NativeArray<T> New<T>(IEnumerable<T> e) where T : unmanaged
+      => new NativeArray<T>(e.ToArray(), Allocator.Persistent);
+
+    public static NativeArray<T> New<T>(int size) where T : unmanaged
+      => new NativeArray<T>(size, Allocator.Persistent,
+                            NativeArrayOptions.UninitializedMemory);
+}
