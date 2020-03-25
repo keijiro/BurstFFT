@@ -5,13 +5,13 @@ using Unity.Jobs;
 
 // Cooley–Tukey FFT vectorized/parallelized with the Burst compiler
 
-public sealed class FftBuffer : System.IDisposable
+public sealed class BurstFft : IDft, System.IDisposable
 {
     #region Public properties and methods
 
     public NativeArray<float> Spectrum => _O;
 
-    public FftBuffer(int width)
+    public BurstFft(int width)
     {
         _N = width;
         _logN = (int)math.log2(width);
@@ -37,18 +37,18 @@ public sealed class FftBuffer : System.IDisposable
         // Bit-reversal permutation and first DFT pass
         var handle = new FirstPassJob
           { I = input, P = _P, X = X }
-          .Schedule(_N / 2, 64);
+          .Schedule(_N / 2, 512);
 
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
             handle = new DftPassJob
               { T = new NativeSlice<TFactor>(_T, _N / 4 * i), X = X }
-              .Schedule(_N / 4, 32, handle);
+              .Schedule(_N / 4, 256, handle);
 
         // Postprocess (power spectrum calculation)
         handle = new PostprocessJob
           { X = X, O = _O.Reinterpret<float2>(sizeof(float)), s = 2.0f / _N }
-          .Schedule(_N / 2, 64, handle);
+          .Schedule(_N / 2, 512, handle);
 
         // Job completion
         handle.Complete();

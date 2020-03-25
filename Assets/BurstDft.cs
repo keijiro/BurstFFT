@@ -5,13 +5,13 @@ using Unity.Mathematics;
 
 // Naive DFT vectorized/parallelized with the Burst compiler
 
-public sealed class DftBuffer : System.IDisposable
+public sealed class BurstDft : IDft, System.IDisposable
 {
     #region Public properties and methods
 
     public NativeArray<float> Spectrum => _buffer;
 
-    public DftBuffer(int width)
+    public BurstDft(int width)
     {
         // DFT coefficients
         var coeffs = Enumerable.Range(0, width / 2 * width).
@@ -43,7 +43,7 @@ public sealed class DftBuffer : System.IDisposable
             Cr = _coeffs_r.Reinterpret<float4>(4),
             Ci = _coeffs_i.Reinterpret<float4>(4),
             O  = _buffer }
-          .Schedule(input.Length / 2, 16).Complete();
+          .Schedule(input.Length / 2, 1).Complete();
     }
 
     #endregion
