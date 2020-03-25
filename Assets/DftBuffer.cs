@@ -43,7 +43,7 @@ public sealed class DftBuffer : System.IDisposable
             Cr = _coeffs_r.Reinterpret<float4>(4),
             Ci = _coeffs_i.Reinterpret<float4>(4),
             O  = _buffer }
-          .Schedule(input.Length / 2, 4).Complete();
+          .Schedule(input.Length / 2, 16).Complete();
     }
 
     #endregion

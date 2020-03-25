@@ -37,18 +37,18 @@ public sealed class FftBuffer : System.IDisposable
         // Bit-reversal permutation and first DFT pass
         var handle = new FirstPassJob
           { I = input, P = _P, X = X }
-          .Schedule(_N / 2, 16);
+          .Schedule(_N / 2, 64);
 
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
             handle = new DftPassJob
               { T = new NativeSlice<TFactor>(_T, _N / 4 * i), X = X }
-              .Schedule(_N / 4, 16, handle);
+              .Schedule(_N / 4, 32, handle);
 
         // Postprocess (power spectrum calculation)
         handle = new PostprocessJob
           { X = X, O = _O.Reinterpret<float2>(sizeof(float)), s = 2.0f / _N }
-          .Schedule(_N / 2, 16, handle);
+          .Schedule(_N / 2, 64, handle);
 
         // Job completion
         handle.Complete();

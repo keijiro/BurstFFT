@@ -20,17 +20,25 @@ sealed class Test : MonoBehaviour
         _dftTexture = new Texture2D(Width / 2, 1, TextureFormat.RFloat, false);
         _fftTexture = new Texture2D(Width / 2, 1, TextureFormat.RFloat, false);
 
+        var sw = new System.Diagnostics.Stopwatch();
+
         using (var input = TempJobMemory.New<float>(source))
         {
             using (var dft = new DftBuffer(Width))
             {
+                sw.Start();
                 dft.Transform(input);
+                sw.Stop();
+                Debug.Log(sw.ElapsedTicks);
                 _dftTexture.LoadRawTextureData(dft.Spectrum);
             }
 
             using (var fft = new FftBuffer(Width))
             {
+                sw.Restart();
                 fft.Transform(input);
+                sw.Stop();
+                Debug.Log(sw.ElapsedTicks);
                 _fftTexture.LoadRawTextureData(fft.Spectrum);
             }
         }
