@@ -5,39 +5,45 @@ using Unity.Mathematics;
 
 sealed class Test : MonoBehaviour
 {
+    const int Width = 1024;
+
     Texture2D _dftTexture;
     Texture2D _fftTexture;
 
     void Start()
     {
-        var source = Enumerable.Range(0, 1024).
-          Select(i => i / 1024.0f).
+        var source = Enumerable.Range(0, Width).
+          Select(i => (float)i / Width).
           Select(x => 5 * noise.snoise(math.float2(0.324f, x * 1000)) +
                       math.sin(x * 33) + math.sin(x * 300) + math.sin(x * 900));
 
-        _dftTexture = new Texture2D(512, 1, TextureFormat.RFloat, false);
-        _fftTexture = new Texture2D(512, 1, TextureFormat.RFloat, false);
+        _dftTexture = new Texture2D(Width / 2, 1, TextureFormat.RFloat, false);
+        _fftTexture = new Texture2D(Width / 2, 1, TextureFormat.RFloat, false);
 
-        using (var source_na = new NativeArray<float>(source.ToArray(), Allocator.Persistent))
+        using (var input = TempJobMemory.New<float>(source))
         {
-            using (var spectrum = Dft.Transform(source))
-                _dftTexture.LoadRawTextureData(spectrum);
-            _dftTexture.Apply();
-
-            using (var fft = new FftBuffer(1024))
+            using (var dft = new DftBuffer(Width))
             {
-                fft.Transform(source_na);
+                dft.Transform(input);
+                _dftTexture.LoadRawTextureData(dft.Spectrum);
+            }
+
+            using (var fft = new FftBuffer(Width))
+            {
+                fft.Transform(input);
                 _fftTexture.LoadRawTextureData(fft.Spectrum);
             }
-            _fftTexture.Apply();
         }
+
+        _dftTexture.Apply();
+        _fftTexture.Apply();
     }
 
     void OnGUI()
     {
         if (!Event.current.type.Equals(EventType.Repaint)) return;
-        Graphics.DrawTexture(new Rect(10, 10, 512, 16), _dftTexture);
-        Graphics.DrawTexture(new Rect(10, 38, 512, 16), _fftTexture);
+        Graphics.DrawTexture(new Rect(10, 10, Width / 2, 16), _dftTexture);
+        Graphics.DrawTexture(new Rect(10, 38, Width / 2, 16), _fftTexture);
     }
 }
 

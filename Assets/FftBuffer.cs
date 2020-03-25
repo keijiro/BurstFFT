@@ -3,9 +3,7 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Jobs;
 
-//
-// FFT class vectorized/parallelized with the Burst compiler
-//
+// Cooley–Tukey FFT vectorized/parallelized with the Burst compiler
 
 public sealed class FftBuffer : System.IDisposable
 {
