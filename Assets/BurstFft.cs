@@ -22,6 +22,7 @@ public sealed class BurstFft : IDft, System.IDisposable
         BuildTwiddleFactors();
 
         _O = PersistentMemory.New<float>(_N);
+        _X = PersistentMemory.New<float4>(_N / 2);
     }
 
     public void Dispose()
@@ -29,56 +30,55 @@ public sealed class BurstFft : IDft, System.IDisposable
         if (_P.IsCreated) _P.Dispose();
         if (_T.IsCreated) _T.Dispose();
         if (_O.IsCreated) _O.Dispose();
+        if (_X.IsCreated) _X.Dispose();
     }
 
     #if SINGLE_THREAD
 
     public void Transform(NativeArray<float> input)
     {
-        var X = TempJobMemory.New<float4>(_N / 2);
-
         // Bit-reversal permutation and first DFT pass
-        new FirstPassJob { I = input, P = _P, X = X }.Run(_N / 2);
+        new FirstPassJob { I = input, P = _P, X = _X }.Run(_N / 2);
 
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
         {
             var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
-            new DftPassJob { T = T_slice, X = X }.Run(_N / 4);
+            new DftPassJob { T = T_slice, X = _X }.Run(_N / 4);
         }
 
         // Postprocess (power spectrum calculation)
         var O2 = _O.Reinterpret<float2>(sizeof(float));
-        new PostprocessJob { X = X, O = O2, s = 2.0f / _N }.Run(_N / 2);
-
-        X.Dispose();
+        new PostprocessJob { X = _X, O = O2, s = 2.0f / _N }.Run(_N / 2);
     }
 
     #else
 
-    public void Transform(NativeArray<float> input)
+    public JobHandle Schedule(NativeArray<float> input, int parallelism = 32)
     {
-        var X = TempJobMemory.New<float4>(_N / 2);
-
         // Bit-reversal permutation and first DFT pass
-        var handle = new FirstPassJob { I = input, P = _P, X = X }
-          .Schedule(_N / 2, 32);
+        var handle = new FirstPassJob { I = input, P = _P, X = _X }
+          .Schedule(_N / 2, parallelism);
 
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
         {
             var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
-            handle = new DftPassJob { T = T_slice, X = X }
-              .Schedule(_N / 4, 32, handle);
+            handle = new DftPassJob { T = T_slice, X = _X }
+              .Schedule(_N / 4, parallelism, handle);
         }
 
         // Postprocess (power spectrum calculation)
         var O2 = _O.Reinterpret<float2>(sizeof(float));
-        handle = new PostprocessJob { X = X, O = O2, s = 2.0f / _N }
-          .Schedule(_N / 2, 32, handle);
+        handle = new PostprocessJob { X = _X, O = O2, s = 2.0f / _N }
+          .Schedule(_N / 2, parallelism, handle);
 
-        handle.Complete();
-        X.Dispose();
+        return handle;
+    }
+
+    public void Transform(NativeArray<float> input)
+    {
+        Schedule(input).Complete();
     }
 
     #endif
@@ -90,6 +90,7 @@ public sealed class BurstFft : IDft, System.IDisposable
     readonly int _N;
     readonly int _logN;
     NativeArray<float> _O;
+    NativeArray<float4> _X;
 
     #endregion
 
