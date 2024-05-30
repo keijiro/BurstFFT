@@ -22,6 +22,7 @@ public sealed class BurstFft : IDft, System.IDisposable
         BuildTwiddleFactors();
 
         _O = PersistentMemory.New<float>(_N);
+        _X = PersistentMemory.New<float4>(_N / 2);
     }
 
     public void Dispose()
@@ -29,6 +30,7 @@ public sealed class BurstFft : IDft, System.IDisposable
         if (_P.IsCreated) _P.Dispose();
         if (_T.IsCreated) _T.Dispose();
         if (_O.IsCreated) _O.Dispose();
+        if (_X.IsCreated) _X.Dispose();
     }
 
     #if SINGLE_THREAD
@@ -81,6 +83,34 @@ public sealed class BurstFft : IDft, System.IDisposable
         X.Dispose();
     }
 
+    public JobHandle Schedule(NativeArray<float> input)
+    {
+        // Bit-reversal permutation and first DFT pass
+        var J1 = new FirstPassJob { I = input, P = _P, X = _X };
+        var H1 = J1.Schedule(_N / 2, 64);
+
+        // 2nd and later DFT passes
+        JobHandle H2 = new();
+        bool first = true;
+        for (var i = 0; i < _logN - 1; i++) {
+            var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
+            var J2 = new DftPassJob { T = T_slice, X = _X };
+            if (first) {
+                H2 = J2.Schedule(_N / 4, 64, H1);
+                first = false;
+            }
+            else {
+                H2 = J2.Schedule(_N / 4, 64, H2);
+            }
+        }
+
+        // Postprocess (power spectrum calculation)
+        var O2 = _O.Reinterpret<float2>(sizeof(float));
+        var J3 = new PostprocessJob { X = _X, O = O2, s = 2.0f / _N };
+        return J3.Schedule(_N / 2, 64, H2);
+    }
+
+
     #endif
 
     #endregion
@@ -90,6 +120,7 @@ public sealed class BurstFft : IDft, System.IDisposable
     readonly int _N;
     readonly int _logN;
     NativeArray<float> _O;
+    NativeArray<float4> _X;
 
     #endregion
 
