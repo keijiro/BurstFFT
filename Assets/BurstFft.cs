@@ -1,5 +1,3 @@
-#define SINGLE_THREAD
-
 using System.Linq;
 using Unity.Collections;
 using Unity.Mathematics;
@@ -60,18 +58,21 @@ public sealed class BurstFft : IDft, System.IDisposable
         var handle = new FirstPassJob { I = input, P = _P, X = _X }
           .Schedule(_N / 2, parallelism);
 
+        // Use a second handle for postprocessing dependancies
+        JobHandle handle2 = new();
+
         // 2nd and later DFT passes
         for (var i = 0; i < _logN - 1; i++)
         {
             var T_slice = new NativeSlice<TFactor>(_T, _N / 4 * i);
-            handle = new DftPassJob { T = T_slice, X = _X }
+            handle2 = new DftPassJob { T = T_slice, X = _X }
               .Schedule(_N / 4, parallelism, handle);
         }
 
         // Postprocess (power spectrum calculation)
         var O2 = _O.Reinterpret<float2>(sizeof(float));
         handle = new PostprocessJob { X = _X, O = O2, s = 2.0f / _N }
-          .Schedule(_N / 2, parallelism, handle);
+          .Schedule(_N / 2, parallelism, handle2);
 
         return handle;
     }
