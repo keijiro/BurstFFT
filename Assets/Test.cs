@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.UIElements;
 using Unity.Collections;
 using Unity.Mathematics;
 using Stopwatch = System.Diagnostics.Stopwatch;
@@ -55,13 +56,11 @@ sealed class Test : MonoBehaviour
             using (var ft = new BurstDft(Width)) _dft2 = Benchmark(ft, data);
             using (var ft = new BurstFft(Width)) _fft  = Benchmark(ft, data);
         }
-    }
 
-    void OnGUI()
-    {
-        Graphics.DrawTexture(new Rect(10, 10, Width / 2, 16), _dft1);
-        Graphics.DrawTexture(new Rect(10, 38, Width / 2, 16), _dft2);
-        Graphics.DrawTexture(new Rect(10, 64, Width / 2, 16), _fft);
+        var root = GetComponent<UIDocument>().rootVisualElement;
+        root.Q("image1").style.backgroundImage = _dft1;
+        root.Q("image2").style.backgroundImage = _dft2;
+        root.Q("image3").style.backgroundImage = _fft;
     }
 }
 
