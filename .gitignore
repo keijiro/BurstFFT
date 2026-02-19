@@ -1,19 +1,24 @@
-# Windows
 Thumbs.db
 Desktop.ini
-
-# macOS
 .DS_Store
-
-# Code Editors
-/.idea
-/.vscode
-/*.csproj
-/*.sln
 *.swp
-*.vcxproj.user
 
-# Unity
+/GeneratedAssets
 /Library
 /Logs
+/Recordings
 /Temp
+/UIElementsSchema
+/UserSettings
+
+/.utmp
+/mono_crash.*.json
+/Xcode
+/Web
+
+/*.app
+/*.exe
+/*.apk
+/*_DoNotShip
+/*.tgz
+

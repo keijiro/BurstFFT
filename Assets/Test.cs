@@ -59,7 +59,6 @@ sealed class Test : MonoBehaviour
 
     void OnGUI()
     {
-        if (!Event.current.type.Equals(EventType.Repaint)) return;
         Graphics.DrawTexture(new Rect(10, 10, Width / 2, 16), _dft1);
         Graphics.DrawTexture(new Rect(10, 38, Width / 2, 16), _dft2);
         Graphics.DrawTexture(new Rect(10, 64, Width / 2, 16), _fft);

@@ -1,17 +1,6 @@
 {
-  "scopedRegistries": [
-    {
-      "name": "Unity NuGet",
-      "url": "https://unitynuget-registry.azurewebsites.net",
-      "scopes": [
-        "org.nuget"
-      ]
-    }
-  ],
   "dependencies": {
-    "org.nuget.system.memory": "4.5.3",
-    "com.unity.burst": "1.2.3",
-    "com.unity.mathematics": "1.1.0",
-    "com.unity.modules.ui": "1.0.0"
+    "com.unity.burst": "1.8.28",
+    "com.unity.mathematics": "1.3.3"
   }
 }
